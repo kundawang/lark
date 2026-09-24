@@ -163,6 +163,34 @@ class TestGrammar(TestCase):
         self.assertRaises(GrammarError, Lark, """start: "a"\n%declare foo""")
         self.assertRaises(GrammarError, Lark, """start: "a"\n%declare FOO bar""")
 
+    def test_declare_then_define(self):
+        # A %declare'd terminal may be defined later in the same grammar;
+        # the definition fulfills the declaration.
+        g = """start: A B
+               %declare A B
+               A: "a"
+               B: "b"
+            """
+        parser = Lark(g)
+        tree = parser.parse("ab")
+        self.assertEqual(tree.children, [Token('A', 'a'), Token('B', 'b')])
+
+        # Order doesn't matter: defining first, then declaring, is a no-op
+        g2 = """start: A
+                A: "a"
+                %declare A
+             """
+        parser = Lark(g2)
+        self.assertEqual(parser.parse("a").children, [Token('A', 'a')])
+
+        # Declaring twice is fine, but defining twice is still an error
+        Lark("""start: A\n%declare A\n%declare A\nA: "a"\n""")
+        self.assertRaises(GrammarError, Lark, """start: A\nA: "a"\nA: "b"\n""")
+
+        # Using a declared (but never defined) terminal inside another
+        # terminal raises a GrammarError, not an AssertionError
+        self.assertRaises(GrammarError, Lark, """start: B\nB: A "x"\n%declare A\n""")
+
     def test_token_multiline_only_works_with_x_flag(self):
         g = r"""start: ABC
                 ABC: /  a      b c

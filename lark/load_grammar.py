@@ -886,7 +886,8 @@ def resolve_term_references(term_dict):
                         term_value = term_dict[item.name]
                     except KeyError:
                         raise GrammarError("Terminal used but not defined: %s" % item.name)
-                    assert term_value is not None
+                    if term_value is None:
+                        raise GrammarError("Terminal used but not defined: %s (in %s)" % (item.name, name))
                     exp.children[0] = term_value
                     changed = True
                 else:
@@ -1129,8 +1130,13 @@ class GrammarBuilder:
 
     def _define(self, name, is_term, exp, params=(), options=None, *, override=False):
         if name in self._definitions:
-            if not override:
+            if exp is None:
+                # A %declare of an already declared or defined name is a no-op
+                return
+            if self._definitions[name].tree is not None and not override:
                 self._grammar_error(is_term, "{Type} '{name}' defined more than once", name)
+            # Otherwise, the existing definition is only a declaration (%declare),
+            # and this definition fulfills it.
         elif override:
             self._grammar_error(is_term, "Cannot override a nonexisting {type} {name}", name)
 
