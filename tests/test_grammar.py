@@ -163,6 +163,33 @@ class TestGrammar(TestCase):
         self.assertRaises(GrammarError, Lark, """start: "a"\n%declare foo""")
         self.assertRaises(GrammarError, Lark, """start: "a"\n%declare FOO bar""")
 
+    def test_declare(self):
+        # %declare declares a terminal without defining it; the definition
+        # may appear elsewhere in the grammar (or be provided by a plugin).
+        g = Lark("""
+        start: A B
+        %declare A B
+        A: "a"
+        B: "b"
+        """)
+        self.assertEqual(g.parse("ab"), Tree('start', [Token('A', 'a'), Token('B', 'b')]))
+
+        # Declaring an already-defined terminal, or declaring twice, is a no-op
+        Lark("""
+        start: A
+        A: "a"
+        %declare A
+        %declare A
+        """)
+
+        # A rule name in %declare reports the position of the bad name
+        try:
+            Lark("""start: "a"\n\n%declare FOO bar""")
+        except GrammarError as e:
+            self.assertIn("line 3", str(e))
+        else:
+            self.fail("Expected GrammarError")
+
     def test_token_multiline_only_works_with_x_flag(self):
         g = r"""start: ABC
                 ABC: /  a      b c

@@ -886,7 +886,9 @@ def resolve_term_references(term_dict):
                         term_value = term_dict[item.name]
                     except KeyError:
                         raise GrammarError("Terminal used but not defined: %s" % item.name)
-                    assert term_value is not None
+                    if term_value is None:  # Terminal declared with %declare, but never defined
+                        raise GrammarError("Terminal %s is declared but not defined, so it cannot be used inside terminal %s"
+                                           % (item.name, name))
                     exp.children[0] = term_value
                     changed = True
                 else:
@@ -910,10 +912,16 @@ def symbol_from_strcase(s):
 @inline_args
 class PrepareGrammar(Transformer_InPlace):
     def terminal(self, name):
-        return Terminal(str(name), filter_out=name.startswith('_'))
+        term = Terminal(str(name), filter_out=name.startswith('_'))
+        term.line = name.line
+        term.column = name.column
+        return term
 
     def nonterminal(self, name):
-        return NonTerminal(name.value)
+        term = NonTerminal(name.value)
+        term.line = name.line
+        term.column = name.column
+        return term
 
 
 def _find_used_symbols(tree):
@@ -1130,7 +1138,12 @@ class GrammarBuilder:
     def _define(self, name, is_term, exp, params=(), options=None, *, override=False):
         if name in self._definitions:
             if not override:
-                self._grammar_error(is_term, "{Type} '{name}' defined more than once", name)
+                if exp is None:
+                    # %declare only declares a symbol; redeclaring it is a no-op
+                    return
+                if self._definitions[name].tree is not None:
+                    self._grammar_error(is_term, "{Type} '{name}' defined more than once", name)
+                # Otherwise the symbol was only declared (with %declare), and is now being defined
         elif override:
             self._grammar_error(is_term, "Cannot override a nonexisting {type} {name}", name)
 
@@ -1275,7 +1288,8 @@ class GrammarBuilder:
                     assert isinstance(symbol, Symbol), symbol
                     is_term = isinstance(symbol, Terminal)
                     if not is_term:
-                        raise GrammarError("Expecting terminal name to follow %%declare, but got rule name %r" % symbol.name)
+                        raise GrammarError("Expecting terminal name to follow %%declare, but got rule name %r (at line %s, column %s)"
+                                           % (symbol.name, symbol.line, symbol.column))
                     if mangle is None:
                         name = symbol.name
                     else:
