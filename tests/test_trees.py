@@ -452,6 +452,52 @@ class TestTrees(TestCase):
             result = T().transform(copy.deepcopy(tree))
             self.assertEqual(result, expected)
 
+    def test_transformer_variants_discard_first_and_middle_child(self):
+        cases = [
+            (Tree('start', [
+                Tree('outside', [Token('T', 'outside')]),
+                Tree('wrap', [
+                    Tree('drop', [Token('T', 'first')]),
+                    Tree('inside', [Token('T', 'second')]),
+                    Tree('drop', [Token('T', 'third')]),
+                    Tree('inside', [Token('T', 'fourth')]),
+                ]),
+            ]), Tree('start', [
+                Tree('outside', [Token('T', 'outside')]),
+                Tree('wrap', [
+                    Tree('inside', [Token('T', 'second')]),
+                    Tree('inside', [Token('T', 'fourth')]),
+                ]),
+            ])),
+            (Tree('start', [
+                Tree('outside', [Token('T', 'outside')]),
+                Tree('wrap', [
+                    Token('DROP', 'first'),
+                    Token('KEEP', 'second'),
+                    Token('DROP', 'third'),
+                    Token('KEEP', 'fourth'),
+                ]),
+            ]), Tree('start', [
+                Tree('outside', [Token('T', 'outside')]),
+                Tree('wrap', [
+                    Token('KEEP', 'second'),
+                    Token('KEEP', 'fourth'),
+                ]),
+            ])),
+        ]
+        for base in (Transformer, Transformer_InPlace, Transformer_NonRecursive, Transformer_InPlaceRecursive):
+            class T(base):
+                def drop(self, children):
+                    return Discard
+
+                def DROP(self, token):
+                    return Discard
+
+            for index, (tree, expected) in enumerate(cases):
+                with self.subTest(base=base.__name__, case=index):
+                    result = T().transform(copy.deepcopy(tree))
+                    self.assertEqual(result, expected)
+
     def test_merge_transformers(self):
         tree = Tree('start', [
             Tree('main', [
