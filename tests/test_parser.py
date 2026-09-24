@@ -2691,6 +2691,36 @@ def _make_parser_test(LEXER, PARSER):
             self.assertIs(ip_copy.parser_state.lexer, ip_copy.lexer_thread)
             self.assertIsNot(ip_copy.parser_state.lexer, ip.lexer_thread)
 
+        @unittest.skipIf(PARSER != 'lalr', "interactive_parser is only implemented for LALR at the moment")
+        def test_interactive_parser_copy_interleaved_feeds(self):
+            g = _Lark(r'''
+                start: A B A B
+                A: "a"
+                B: "b"
+            ''')
+
+            ip = g.parse_interactive("abab")
+            ip_copy = ip.copy()
+
+            # Alternatingly feed both parsers, each lexing from its own parser state.
+            # If the copy shared the original's lexer thread, the token stream would be
+            # split between the two parsers and both would derail.
+            lex = ip.parser_state.lexer.lex(ip.parser_state)
+            lex_copy = ip_copy.parser_state.lexer.lex(ip_copy.parser_state)
+            for _ in range(4):
+                ip.feed_token(next(lex))
+                ip_copy.feed_token(next(lex_copy))
+
+            expected = Tree('start', ['a', 'b', 'a', 'b'])
+            self.assertEqual(ip.feed_eof(), expected)
+            self.assertEqual(ip_copy.feed_eof(), expected)
+
+            # The copy must own its lexer thread state, independent of the original's
+            self.assertIs(ip_copy.parser_state.lexer, ip_copy.lexer_thread)
+            self.assertIsNot(ip_copy.lexer_thread, ip.lexer_thread)
+            self.assertIsNot(ip_copy.lexer_thread.state, ip.lexer_thread.state)
+            self.assertIsNot(ip_copy.lexer_thread.state.line_ctr, ip.lexer_thread.state.line_ctr)
+
         @unittest.skipIf(PARSER != 'lalr', "interactive_parser error handling only works with LALR for now")
         def test_error_with_interactive_parser(self):
             def ignore_errors(e):
