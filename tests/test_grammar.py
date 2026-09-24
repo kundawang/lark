@@ -55,6 +55,21 @@ class TestGrammar(TestCase):
         list(p.lex("abc 456"))
         assert sorted(set(fired)) == ['A', 'B']
 
+    def test_lexer_callback_on_keyword_terminal(self):
+        # A keyword (string) terminal that is also matched by a regexp terminal
+        # gets absorbed by it; the lexer used to silently drop such a terminal's
+        # lexer_callbacks entry. The callback must still fire when the keyword
+        # is produced via the host terminal's UnlessCallback.
+        fired = []
+        p = Lark(r"""
+            start: (A | AKW)+
+            A: /[a-z]+/
+            AKW: "foo"
+            %ignore " "
+        """, parser='lalr', lexer='basic',
+            lexer_callbacks={'AKW': lambda t: fired.append(t.type) or t})
+        list(p.lex("foo abc foo"))
+        assert fired == ['AKW', 'AKW']
 
     def test_override_rule(self):
         # Overrides the 'sep' template in existing grammar to add an optional terminating delimiter
