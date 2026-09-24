@@ -374,6 +374,7 @@ def _create_unless(terminals, g_regex_flags, re_, use_bytes):
     assert len(tokens_by_type) <= 2, tokens_by_type.keys()
     embedded_strs = set()
     callback = {}
+    unless_sources = {}
     for retok in tokens_by_type.get(PatternRE, []):
         unless = []
         for strtok in tokens_by_type.get(PatternStr, []):
@@ -382,13 +383,14 @@ def _create_unless(terminals, g_regex_flags, re_, use_bytes):
             s = strtok.pattern.value
             if s == _get_match(re_, retok.pattern.to_regexp(), s, g_regex_flags):
                 unless.append(strtok)
+                unless_sources.setdefault(strtok.name, []).append(retok.name)
                 if strtok.pattern.flags <= retok.pattern.flags:
                     embedded_strs.add(strtok)
         if unless:
             callback[retok.name] = UnlessCallback(Scanner(unless, g_regex_flags, re_, use_bytes=use_bytes))
 
     new_terminals = [t for t in terminals if t not in embedded_strs]
-    return new_terminals, callback
+    return new_terminals, callback, unless_sources
 
 
 class Scanner:
@@ -638,7 +640,7 @@ class BasicLexer(AbstractBasicLexer):
         self._search_scanner: Optional[Scanner] = None
 
     def _build_scanner(self) -> Scanner:
-        terminals, self.callback = _create_unless(self.terminals, self.g_regex_flags, self.re, self.use_bytes)
+        terminals, self.callback, unless_sources = _create_unless(self.terminals, self.g_regex_flags, self.re, self.use_bytes)
         assert all(self.callback.values())
 
         for type_, f in self.user_callbacks.items():
@@ -652,6 +654,14 @@ class BasicLexer(AbstractBasicLexer):
                 )
             else:
                 self.callback[type_] = f
+            # A keyword terminal folded into a regex terminal's UnlessCallback
+            # is never yielded by the scanner under its own name; the token is
+            # only re-typed to it afterwards. Chain the user callback onto the
+            # absorbing terminal so it fires for the keyword too.
+            for retok_name in unless_sources.get(type_, ()):
+                self.callback[retok_name] = CallChain(
+                    self.callback[retok_name], f, lambda t, type_=type_: t.type == type_
+                )
 
         return Scanner(terminals, self.g_regex_flags, self.re, self.use_bytes)
 
